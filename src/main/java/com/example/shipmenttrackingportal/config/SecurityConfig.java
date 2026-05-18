@@ -3,7 +3,7 @@ package com.example.shipmenttrackingportal.config;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.AuthenticationProvider;
+// import org.springframework.security.authentication.AuthenticationProvider;
 // import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -35,13 +35,11 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            .csrf(csrf -> csrf.disable()) // CSRF not needed for stateless JWT APIs
+            .csrf(csrf -> csrf.disable())
             .sessionManagement(session ->
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                // Public endpoints — no token required
                 .requestMatchers("/api/auth/**").permitAll()
-                // Secured endpoints — further role restrictions added in Week 2
                 .anyRequest().authenticated()
             )
             .authenticationProvider(authenticationProvider())
@@ -49,11 +47,6 @@ public class SecurityConfig {
 
         return http.build();
     }
-
-    /**
-     * Configures the DaoAuthenticationProvider with our custom UserDetailsService
-     * and BCrypt password encoder.
-     */
 
         @Bean
         public DaoAuthenticationProvider authenticationProvider() {
@@ -68,20 +61,11 @@ public class SecurityConfig {
             return authProvider;
         }
 
-
-    /**
-     * BCryptPasswordEncoder with default strength (10 rounds).
-     * Used to hash passwords on registration and verify them on login.
-     */
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
-    /**
-     * Exposes AuthenticationManager as a Spring bean.
-     * Required by AuthService to programmatically authenticate login credentials.
-     */
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config)
             throws Exception {
