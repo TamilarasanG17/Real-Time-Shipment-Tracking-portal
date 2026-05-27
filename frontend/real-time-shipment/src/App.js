@@ -1,25 +1,30 @@
-import logo from './logo.svg';
-import './App.css';
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import LoginPage         from './pages/LoginPage';
+import ShipperDashboard  from './pages/ShipperDashboard';
+import CarrierDashboard  from './pages/CarrierDashboard';
 
-function App() {
-  return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
-  );
+function PrivateRoute({ children, requiredRole }) {
+  const token = localStorage.getItem('token');
+  const role  = localStorage.getItem('role');
+  if (!token) return <Navigate to="/login" replace />;
+  if (requiredRole && role !== requiredRole) return <Navigate to="/login" replace />;
+  return children;
 }
 
-export default App;
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login"   element={<LoginPage />} />
+        <Route path="/shipper" element={
+          <PrivateRoute requiredRole="SHIPPER"><ShipperDashboard /></PrivateRoute>
+        } />
+        <Route path="/carrier" element={
+          <PrivateRoute requiredRole="CARRIER"><CarrierDashboard /></PrivateRoute>
+        } />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
