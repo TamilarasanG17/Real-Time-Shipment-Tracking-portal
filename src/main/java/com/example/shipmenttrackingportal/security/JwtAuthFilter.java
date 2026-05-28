@@ -27,6 +27,14 @@ protected void doFilterInternal(
         @NonNull HttpServletResponse response,
         @NonNull FilterChain filterChain)
         throws ServletException, IOException {
+    
+    String path = request.getServletPath();
+
+    if (path.startsWith("/ws")) {
+        filterChain.doFilter(request, response);
+        return;
+    }
+
 
     final String authHeader = request.getHeader("Authorization");
 

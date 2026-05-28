@@ -30,6 +30,8 @@ export default function CarrierDashboard() {
     catch {}
   };
 
+
+
   const handleBid = async (shipmentId) => {
     const form = bidForms[shipmentId] || {};
     if (!form.proposedPrice) { alert('Enter a price'); return; }

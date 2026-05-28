@@ -33,13 +33,14 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+            .cors(cors -> {}) 
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session ->
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
 
                 .requestMatchers("/api/auth/**").permitAll()
-
+                .requestMatchers("/ws/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/shipments").hasRole("SHIPPER")
                 .requestMatchers(HttpMethod.GET, "/api/shipments/mine").hasRole("SHIPPER")
                 .requestMatchers(HttpMethod.POST, "/api/shipments/*/bids/*/award").hasRole("SHIPPER")
