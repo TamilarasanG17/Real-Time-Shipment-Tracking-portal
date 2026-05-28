@@ -19,10 +19,20 @@ export function useShipmentTracking(shipmentId, token) {
     if (clientRef.current?.active) clientRef.current.deactivate();
 
     const client = new Client({
-      webSocketFactory: () => new SockJS(WS_URL),
-      connectHeaders:   { Authorization: `Bearer ${token}` },
-      reconnectDelay:    RECONNECT_DELAY_MS,
+      // webSocketFactory: () => new SockJS(WS_URL),
+      // connectHeaders:   { Authorization: `Bearer ${token}` },
+      // reconnectDelay:    RECONNECT_DELAY_MS,
 
+
+      // SockJS connection
+      webSocketFactory: () => new SockJS(WS_URL),
+
+      // Auto reconnect
+      reconnectDelay: RECONNECT_DELAY_MS,
+
+      debug: (str) => {
+        console.log('[STOMP]', str);
+      },
       onConnect: () => {
         setConnected(true);
         setError(null);
