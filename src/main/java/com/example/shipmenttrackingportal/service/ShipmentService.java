@@ -1,20 +1,14 @@
 package com.example.shipmenttrackingportal.service;
 
-
 import java.util.List;
-import java.util.stream.Collectors;
 
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.example.shipmenttrackingportal.dto.ShipmentRequest;
-import com.example.shipmenttrackingportal.dto.ShipmentResponse;
-import com.example.shipmenttrackingportal.enums.Role;
-import com.example.shipmenttrackingportal.enums.ShipmentStatus;
-import com.example.shipmenttrackingportal.exception.ResourceNotFoundException;
-import com.example.shipmenttrackingportal.exception.UnauthorizedActionException;
+import com.example.shipmenttrackingportal.dto.ShipmentDtos.CreateShipmentRequest;
+import com.example.shipmenttrackingportal.dto.ShipmentDtos.ShipmentResponse;
 import com.example.shipmenttrackingportal.model.Shipment;
+import com.example.shipmenttrackingportal.model.ShipmentStatus;
 import com.example.shipmenttrackingportal.model.User;
 import com.example.shipmenttrackingportal.repository.ShipmentRepository;
 import com.example.shipmenttrackingportal.repository.UserRepository;
@@ -28,86 +22,152 @@ public class ShipmentService {
     private final ShipmentRepository shipmentRepository;
     private final UserRepository userRepository;
 
-    
-    @Transactional
-    public ShipmentResponse postShipment(ShipmentRequest request) {
-        User shipper = getAuthenticatedUser();
+    // ── Shipper: Create a new load posting ───────────────────────────────────
 
-        if (shipper.getRole() != Role.SHIPPER) {
-            throw new UnauthorizedActionException(
-                    "Only users with role SHIPPER can post freight loads.");
-        }
+    @Transactional
+    public ShipmentResponse createShipment(CreateShipmentRequest request, String shipperEmail) {
+        User shipper = findUserByEmail(shipperEmail);
 
         Shipment shipment = Shipment.builder()
                 .origin(request.getOrigin())
                 .destination(request.getDestination())
                 .weightKg(request.getWeightKg())
                 .description(request.getDescription())
-                .status(ShipmentStatus.OPEN)
                 .shipper(shipper)
                 .build();
 
-        Shipment saved = shipmentRepository.save(shipment);
-        return toResponse(saved);
+        return toResponse(shipmentRepository.save(shipment));
     }
- 
+
+    // ── Public: Browse available loads (OPEN status) ─────────────────────────
+
     @Transactional(readOnly = true)
     public List<ShipmentResponse> getOpenShipments() {
         return shipmentRepository.findByStatus(ShipmentStatus.OPEN)
                 .stream()
                 .map(this::toResponse)
-                .collect(Collectors.toList());
+                .toList();
     }
 
-    
+    // ── Shipper: View own load postings ───────────────────────────────────────
+
     @Transactional(readOnly = true)
-    public List<ShipmentResponse> getMyShipments() {
-        User shipper = getAuthenticatedUser();
-
-        if (shipper.getRole() != Role.SHIPPER) {
-            throw new UnauthorizedActionException(
-                    "Only users with role SHIPPER can view their posted loads.");
-        }
-
-        return shipmentRepository.findByShipperId(shipper.getId())
+    public List<ShipmentResponse> getShipperLoads(String shipperEmail) {
+        User shipper = findUserByEmail(shipperEmail);
+        return shipmentRepository.findByShipper(shipper)
                 .stream()
                 .map(this::toResponse)
-                .collect(Collectors.toList());
+                .toList();
     }
 
+    // ── Carrier: View assigned loads ──────────────────────────────────────────
 
     @Transactional(readOnly = true)
-    public ShipmentResponse getShipmentById(Long shipmentId) {
-        Shipment shipment = findShipmentById(shipmentId);
-        return toResponse(shipment);
+    public List<ShipmentResponse> getCarrierLoads(String carrierEmail) {
+        User carrier = findUserByEmail(carrierEmail);
+        return shipmentRepository.findByAwardedCarrier(carrier)
+                .stream()
+                .map(this::toResponse)
+                .toList();
     }
 
-    public User getAuthenticatedUser() {
-        String email = SecurityContextHolder.getContext()
-                .getAuthentication()
-                .getName();
-        return userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Authenticated user not found: " + email));
+    // ── Carrier: Update shipment status (IN_TRANSIT, DELIVERED) ──────────────
+
+    @Transactional
+    public ShipmentResponse updateStatus(Long shipmentId, ShipmentStatus newStatus,
+                                         String carrierEmail) {
+        Shipment shipment = findById(shipmentId);
+        User carrier = findUserByEmail(carrierEmail);
+
+        if (!shipment.getAwardedCarrier().getId().equals(carrier.getId())) {
+            throw new AccessDeniedException(
+        "You are not the assigned carrier for this shipment");
+        }
+
+        validateStatusTransition(shipment.getStatus(), newStatus);
+        shipment.setStatus(newStatus);
+
+        return toResponse(shipmentRepository.save(shipment));
     }
 
-    public Shipment findShipmentById(long id) {
+    // ── Get single shipment ───────────────────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public ShipmentResponse getShipmentById(Long id) {
+        return toResponse(findById(id));
+    }
+
+    // ── Cancel shipment (shipper only) ────────────────────────────────────────
+
+    @Transactional
+    public ShipmentResponse cancelShipment(Long shipmentId, String shipperEmail) {
+        Shipment shipment = findById(shipmentId);
+        User shipper = findUserByEmail(shipperEmail);
+
+        if (!shipment.getShipper().getId().equals(shipper.getId())) {
+            throw new RuntimeException("Only the shipper can cancel this load");
+        }
+        if (shipment.getStatus() == ShipmentStatus.IN_TRANSIT
+                || shipment.getStatus() == ShipmentStatus.DELIVERED) {
+            throw new InvalidStateTransitionException(
+                    "Cannot cancel a shipment that is in transit or delivered");
+        }
+
+        shipment.setStatus(ShipmentStatus.CANCELLED);
+        return toResponse(shipmentRepository.save(shipment));
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    public Shipment findById(Long id) {
         return shipmentRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Shipment not found with id: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Shipment not found: " + id));
+    }
+
+    private User findUserByEmail(String email) {
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + email));
+    }
+
+    private void validateStatusTransition(ShipmentStatus current, ShipmentStatus next) {
+        boolean valid = switch (current) {
+            case AWAITING_PICKUP -> next == ShipmentStatus.IN_TRANSIT;
+            case IN_TRANSIT      -> next == ShipmentStatus.DELIVERED;
+            default -> false;
+        };
+        if (!valid) {
+            throw new InvalidStateTransitionException(
+                    "Invalid status transition: " + current + " → " + next);
+        }
     }
 
     public ShipmentResponse toResponse(Shipment s) {
-        return ShipmentResponse.builder()
-                .id(s.getId())
-                .origin(s.getOrigin())
-                .destination(s.getDestination())
-                .weightKg(s.getWeightKg())
-                .description(s.getDescription())
-                .status(s.getStatus())
-                .postedAt(s.getPostedAt())
-                .shipperEmail(s.getShipper() != null ? s.getShipper().getEmail() : null)
-                .awardedCarrierEmail(s.getCarrier() != null ? s.getCarrier().getEmail() : null)
-                .build();
+        ShipmentResponse resp = new ShipmentResponse();
+        resp.setId(s.getId());
+        resp.setOrigin(s.getOrigin());
+        resp.setDestination(s.getDestination());
+        resp.setWeightKg(s.getWeightKg());
+        resp.setDescription(s.getDescription());
+        resp.setStatus(s.getStatus());
+        resp.setShipperName(s.getShipper() != null ? s.getShipper().getFullName() : null);
+        resp.setAwardedCarrierName(s.getAwardedCarrier() != null
+                ? s.getAwardedCarrier().getFullName() : null);
+        resp.setAwardedPrice(s.getAwardedPrice());
+        resp.setCurrentLat(s.getCurrentLat());
+        resp.setCurrentLng(s.getCurrentLng());
+        resp.setCreatedAt(s.getCreatedAt());
+        resp.setUpdatedAt(s.getUpdatedAt());
+        return resp;
+    }
+
+    // Inner exception classes (can also be in separate file)
+    public static class ResourceNotFoundException extends RuntimeException {
+        public ResourceNotFoundException(String msg) { super(msg); }
+    }
+    public static class InvalidStateTransitionException extends RuntimeException {
+        public InvalidStateTransitionException(String msg) { super(msg); }
+    }
+    public static class AccessDeniedException extends RuntimeException {
+        public AccessDeniedException(String msg) { super(msg); }
     }
 }

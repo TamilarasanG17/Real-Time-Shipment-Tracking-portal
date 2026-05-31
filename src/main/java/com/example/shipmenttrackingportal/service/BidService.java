@@ -1,151 +1,153 @@
 package com.example.shipmenttrackingportal.service;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.example.shipmenttrackingportal.dto.BidRequest;
-import com.example.shipmenttrackingportal.dto.BidResponse;
-import com.example.shipmenttrackingportal.enums.Role;
-import com.example.shipmenttrackingportal.enums.ShipmentStatus;
-import com.example.shipmenttrackingportal.exception.ResourceNotFoundException;
-import com.example.shipmenttrackingportal.exception.ShipmentNotOpenException;
-import com.example.shipmenttrackingportal.exception.UnauthorizedActionException;
+import com.example.shipmenttrackingportal.dto.BidDtos.BidResponse;
+import com.example.shipmenttrackingportal.dto.BidDtos.PlaceBidRequest;
 import com.example.shipmenttrackingportal.model.Bid;
+import com.example.shipmenttrackingportal.model.BidStatus;
 import com.example.shipmenttrackingportal.model.Shipment;
+import com.example.shipmenttrackingportal.model.ShipmentStatus;
 import com.example.shipmenttrackingportal.model.User;
 import com.example.shipmenttrackingportal.repository.BidRepository;
 import com.example.shipmenttrackingportal.repository.ShipmentRepository;
+import com.example.shipmenttrackingportal.repository.UserRepository;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class BidService {
 
     private final BidRepository bidRepository;
     private final ShipmentRepository shipmentRepository;
-    private final ShipmentService shipmentService; 
+    private final UserRepository userRepository;
+
+    // ── Carrier: Place a bid on an open shipment ──────────────────────────────
 
     @Transactional
-    public BidResponse submitBid(long shipmentId, BidRequest request) {
-        User carrier = shipmentService.getAuthenticatedUser();
-
-        if (carrier.getRole() != Role.CARRIER) {
-            throw new UnauthorizedActionException(
-                    "Only users with role CARRIER can submit bids.");
-        }
-
-        Shipment shipment = shipmentService.findShipmentById(shipmentId);
+    public BidResponse placeBid(Long shipmentId, PlaceBidRequest request, String carrierEmail) {
+        Shipment shipment = findShipmentById(shipmentId);
+        User carrier = findUserByEmail(carrierEmail);
 
         if (shipment.getStatus() != ShipmentStatus.OPEN) {
-            throw new ShipmentNotOpenException(
-                    "Shipment #" + shipmentId + " is not open for bidding. " +
-                    "Current status: " + shipment.getStatus());
+            throw new IllegalStateException("Bids can only be placed on OPEN shipments");
+        }
+
+        if (bidRepository.existsByShipmentAndCarrier(shipment, carrier)) {
+            throw new IllegalStateException("You have already placed a bid on this shipment");
         }
 
         Bid bid = Bid.builder()
-                .proposedPrice(request.getProposedPrice())
-                .note(request.getNote())
-                .accepted(false)
-                .carrier(carrier)
                 .shipment(shipment)
+                .carrier(carrier)
+                .amount(request.getAmount())
+                .notes(request.getNotes())
                 .build();
 
-        Bid saved = bidRepository.save(bid);
-        return toResponse(saved);
+        return toResponse(bidRepository.save(bid));
     }
 
+    // ── Shipper: Accept a bid (atomic - reject all others) ────────────────────
+
     @Transactional
-    public BidResponse awardBid(long shipmentId, long bidId) {
-        User shipper = shipmentService.getAuthenticatedUser();
+    public BidResponse acceptBid(Long bidId, String shipperEmail) {
+        Bid winningBid = findBidById(bidId);
+        Shipment shipment = winningBid.getShipment();
+        User shipper = findUserByEmail(shipperEmail);
 
-        if (shipper.getRole() != Role.SHIPPER) {
-            throw new UnauthorizedActionException(
-                    "Only users with role SHIPPER can award bids.");
-        }
-
-        Shipment shipment = shipmentService.findShipmentById(shipmentId);
-
+        // Authorization: only the shipment's owner can accept bids
         if (!shipment.getShipper().getId().equals(shipper.getId())) {
-            throw new UnauthorizedActionException(
-                    "You can only award bids on your own shipments.");
+            throw new SecurityException("Only the shipper who posted this load can accept bids");
         }
 
         if (shipment.getStatus() != ShipmentStatus.OPEN) {
-            throw new ShipmentNotOpenException(
-                    "Shipment #" + shipmentId + " is no longer open. " +
-                    "Current status: " + shipment.getStatus());
+            throw new IllegalStateException(
+                    "This shipment is no longer accepting bids (status: " + shipment.getStatus() + ")");
         }
 
-        Bid winningBid = bidRepository.findById(bidId)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Bid not found with id: " + bidId));
+        // ── Atomic operation: accept winner, reject all others ─────────────────
+        // 1. Reject all pending bids for this shipment
+        List<Bid> allBids = bidRepository.findByShipment(shipment);
+        allBids.forEach(bid -> bid.setStatus(BidStatus.REJECTED));
+        bidRepository.saveAll(allBids);
 
-        if (!winningBid.getShipment().getId().equals(shipmentId)) {
-            throw new ResourceNotFoundException(
-                    "Bid #" + bidId + " does not belong to Shipment #" + shipmentId);
-        }
-
-        winningBid.setAccepted(true);
+        // 2. Mark the winning bid as ACCEPTED
+        winningBid.setStatus(BidStatus.ACCEPTED);
         bidRepository.save(winningBid);
-        List<Bid> allBids = bidRepository.findByShipmentId(shipmentId);
-        List<Bid> rejectedBids = allBids.stream()
-                .filter(b -> !b.getId().equals(bidId))
-                .peek(b -> b.setAccepted(false))
-                .collect(Collectors.toList());
-        bidRepository.saveAll(rejectedBids);
 
+        // 3. Lock the shipment to the winning carrier
         shipment.setStatus(ShipmentStatus.AWAITING_PICKUP);
-        shipment.setCarrier(winningBid.getCarrier());
+        shipment.setAwardedCarrier(winningBid.getCarrier());
+        shipment.setAwardedPrice(winningBid.getAmount());
         shipmentRepository.save(shipment);
+
+        log.info("Bid {} accepted for shipment {}. Carrier: {}",
+                bidId, shipment.getId(), winningBid.getCarrier().getEmail());
 
         return toResponse(winningBid);
     }
 
-    @Transactional(readOnly = true)
-    public List<BidResponse> getBidsForShipment(Long shipmentId) {
-        User caller = shipmentService.getAuthenticatedUser();
-        Shipment shipment = shipmentService.findShipmentById(shipmentId);
+    // ── Get all bids for a shipment (shipper view) ────────────────────────────
 
-        if (caller.getRole() == Role.SHIPPER &&
-                !shipment.getShipper().getId().equals(caller.getId())) {
-            throw new UnauthorizedActionException(
-                    "You can only view bids on your own shipments.");
+    @Transactional(readOnly = true)
+    public List<BidResponse> getBidsForShipment(Long shipmentId, String shipperEmail) {
+        Shipment shipment = findShipmentById(shipmentId);
+        User shipper = findUserByEmail(shipperEmail);
+
+        if (!shipment.getShipper().getId().equals(shipper.getId())) {
+            throw new SecurityException("You can only view bids on your own shipments");
         }
 
-        return bidRepository.findByShipmentId(shipmentId)
+        return bidRepository.findByShipment(shipment)
                 .stream()
                 .map(this::toResponse)
-                .collect(Collectors.toList());
+                .toList();
     }
 
+    // ── Get carrier's own bids ────────────────────────────────────────────────
+
     @Transactional(readOnly = true)
-    public List<BidResponse> getMyBids() {
-        User carrier = shipmentService.getAuthenticatedUser();
-
-        if (carrier.getRole() != Role.CARRIER) {
-            throw new UnauthorizedActionException(
-                    "Only users with role CARRIER can view their submitted bids.");
-        }
-
-        return bidRepository.findByCarrierId(carrier.getId())
+    public List<BidResponse> getMyBids(String carrierEmail) {
+        User carrier = findUserByEmail(carrierEmail);
+        return bidRepository.findByCarrier(carrier)
                 .stream()
                 .map(this::toResponse)
-                .collect(Collectors.toList());
+                .toList();
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private Shipment findShipmentById(Long id) {
+        return shipmentRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Shipment not found: " + id));
+    }
+
+    private Bid findBidById(Long id) {
+        return bidRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Bid not found: " + id));
+    }
+
+    private User findUserByEmail(String email) {
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found: " + email));
     }
 
     private BidResponse toResponse(Bid b) {
-        return BidResponse.builder()
-                .id(b.getId())
-                .proposedPrice(b.getProposedPrice())
-                .note(b.getNote())
-                .accepted(b.isAccepted())
-                .submittedAt(b.getSubmittedAt())
-                .carrierEmail(b.getCarrier() != null ? b.getCarrier().getEmail() : null)
-                .shipmentId(b.getShipment() != null ? b.getShipment().getId() : null)
-                .build();
+        BidResponse resp = new BidResponse();
+        resp.setId(b.getId());
+        resp.setShipmentId(b.getShipment().getId());
+        resp.setCarrierName(b.getCarrier().getFullName());
+        resp.setCarrierEmail(b.getCarrier().getEmail());
+        resp.setAmount(b.getAmount());
+        resp.setNotes(b.getNotes());
+        resp.setStatus(b.getStatus());
+        resp.setCreatedAt(b.getCreatedAt());
+        return resp;
     }
 }
