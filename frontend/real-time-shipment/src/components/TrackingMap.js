@@ -45,7 +45,6 @@ export default function TrackingMap({ shipmentId, token }) {
 
   const { location, connected, error } = useShipmentTracking(shipmentId, token);
 
-  // Load ping history on mount
   useEffect(() => {
     getPingHistory(shipmentId)
       .then(({ data }) => {
