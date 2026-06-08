@@ -99,7 +99,10 @@ font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Times New Roman', sans
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 
 /* Role selector */
-.role-selector { display: flex; gap: 12px; }
+.role-selector { 
+  display: flex; 
+  gap: 12px; 
+}
 
 .role-option {
   flex: 1;
