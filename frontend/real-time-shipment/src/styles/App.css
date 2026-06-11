@@ -658,3 +658,167 @@ font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Times New Roman', sans
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+
+/* ================================
+   RESPONSIVE DESIGN
+================================ */
+
+/* Tablet */
+@media (max-width: 1024px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bids-panel {
+    max-height: none;
+  }
+
+  .tracking-body {
+    grid-template-columns: 1fr;
+  }
+
+  .tracking-sidebar {
+    border-left: none;
+    border-top: 1px solid var(--border);
+    max-height: 300px;
+  }
+
+  .main-content {
+    padding: 20px;
+  }
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  .dashboard {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .sidebar {
+    width: 100%;
+    padding: 12px 0;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sidebar-logo {
+    padding: 0 16px 16px;
+  }
+
+  .sidebar-nav {
+    display: flex;
+    overflow-x: auto;
+    padding: 8px;
+    gap: 8px;
+  }
+
+  .nav-item {
+    white-space: nowrap;
+    margin: 0;
+  }
+
+  .main-content {
+    padding: 16px;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .load-header,
+  .bid-header,
+  .bid-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .load-meta {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .form-actions {
+    flex-direction: column;
+  }
+
+  .auth-card {
+    padding: 24px;
+  }
+
+  .role-selector {
+    flex-direction: column;
+  }
+
+  .tracking-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .ws-status {
+    margin-left: 0;
+  }
+
+  .tracking-sidebar {
+    padding: 16px;
+  }
+
+  .modal {
+    padding: 20px;
+    max-width: 100%;
+  }
+}
+
+/* Small Mobile */
+@media (max-width: 480px) {
+  .auth-container {
+    padding: 12px;
+  }
+
+  .auth-card {
+    padding: 20px;
+  }
+
+  .page-header h1 {
+    font-size: 18px;
+  }
+
+  .load-card,
+  .bid-card,
+  .tracking-info-card {
+    padding: 12px;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    width: 100%;
+  }
+
+  .sidebar-user {
+    padding: 12px;
+  }
+
+  .user-name {
+    font-size: 12px;
+  }
+
+  .user-role {
+    font-size: 10px;
+  }
+
+  .tracking-title h2 {
+    font-size: 16px;
+  }
+
+  .tracking-title span {
+    font-size: 12px;
+  }
+}
