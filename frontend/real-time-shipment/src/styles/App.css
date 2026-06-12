@@ -356,7 +356,7 @@ font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Times New Roman', sans
 
 .load-actions { display: flex; gap: 8px; }
 
-/* ── Bids Panel ───────────────────────────────────────────────────────────── */
+
 .bids-panel {
   background: var(--surface);
   border: 1px solid var(--border);
