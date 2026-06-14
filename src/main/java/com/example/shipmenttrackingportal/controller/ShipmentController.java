@@ -30,7 +30,7 @@ import lombok.RequiredArgsConstructor;
 @RestController
 @RequestMapping("/api/shipments")
 @RequiredArgsConstructor
-@Tag(name = "Shipments", description = "Load board and shipment management")
+@Tag(name = "Shipments", description = "Real-time Load board and shipment management")
 @SecurityRequirement(name = "bearerAuth")
 public class ShipmentController {
 
